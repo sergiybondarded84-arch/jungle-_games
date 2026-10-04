@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Вижити в джунглях — прототип</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071c13;font-family:Arial,sans-serif;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;pointer-events:none;color:#fff;font-weight:bold;text-shadow:0 2px 4px #000}
+.pill{padding:7px 10px;border:1px solid #c7e3b1;border-radius:12px;background:#10261bd9;font-size:14px}
+#controls{position:absolute;bottom:14px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px}
+.group{display:flex;gap:10px}
+button{width:62px;height:62px;border-radius:50%;border:2px solid #e2efdc;background:#10261bbf;color:white;font-size:25px;font-weight:bold;touch-action:none}
+button:active{background:#63854f}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#06140dc9;color:white;text-align:center}
+.panel{max-width:430px;background:#10271eeF;border:1px solid #a8c99b;border-radius:18px;padding:22px;box-shadow:0 10px 40px #0008}
+.panel h1{font-size:28px;margin:0 0 12px}.panel p{line-height:1.5}
+#start{width:auto;height:auto;border-radius:12px;padding:13px 24px;background:#376f35;font-size:18px}
+.small{font-size:12px;color:#d4e7cd}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div class="pill" id="hearts">❤️ ❤️ ❤️</div><div class="pill">🪙 <span id="tokens">0</span></div>
+ <div class="pill">🍌 <span id="bananas">0</span></div><div class="pill">⚡ <span id="energy">100</span>%</div>
+ <div class="pill">Рівень <span id="level">1</span></div>
+</div>
+<div id="controls">
+ <div class="group"><button id="left" aria-label="Ліворуч">◀</button><button id="right" aria-label="Праворуч">▶</button></div>
+ <div class="group"><button id="jump" aria-label="Стрибок">⬆</button><button id="attack" aria-label="Мачете">⚔</button>
+ <button id="pause" aria-label="Пауза">Ⅱ</button></div>
+</div>
+<div id="overlay"><div class="panel"><h1>🌴 Вижити в джунглях</h1>
+<p>Пригодницький прототип із глибоким фоном джунглів, водою, платформами, токенами, бананами та ворогами.</p>
+<p>Рухайся, стрибай між платформами й використовуй мачете. Банани відновлюють енергію.</p>
+<button id="start">ПОЧАТИ ПРИГОДУ</button><p class="small">Це ігровий прототип. Для справжнього відеореалізму потрібні окремі фототекстури та анімаційні кадри.</p></div></div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W=innerWidth,H=innerHeight,dpr=1;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+const $=id=>document.getElementById(id);
+const input={left:false,right:false,jump:false};
+let active=false,paused=false,frame=0,camera=0,score=0,bananaCount=0,lives=3,energy=100,level=1;
+let hero,plats=[],items=[],foes=[],lastTime=0,worldEnd=0;
+function reset(){
+ frame=0;camera=0;score=0;bananaCount=0;lives=3;energy=100;level=1;
+ hero={x:70,y:H*.58,w:30,h:54,vx:0,vy:0,ground:false,face:1,inv:0,slash:0};
+ plats=[{x:0,y:H*.72,w:Math.max(220,W*.45)},{x:Math.max(270,W*.48),y:H*.65,w:145},{x:Math.max(470,W*.78),y:H*.70,w:155}];
+ items=[];foes=[];worldEnd=0;
+ for(let x=100;x<1800;x+=150+Math.random()*110)spawnAt(x);
+ hero.y=plats[0].y-hero.h;updateHud();
+}
+function spawnAt(x){
+ let p=plats[plats.length-1];
+ if(x>p.x+p.w+10)plats.push({x,y:H*(.61+Math.random()*.12),w:110+Math.random()*100});
+ let q=plats[plats.length-1];
+ if(Math.random()<.9)items.push({x:q.x+35+Math.random()*Math.max(20,q.w-50),y:q.y-38-Math.random()*40,r:11,type:'token',got:false});
+ if(Math.random()<.42)items.push({x:q.x+45+Math.random()*Math.max(20,q.w-55),y:q.y-83,r:13,type:'banana',got:false});
+ if(Math.random()<.62)foes.push({x:q.x+q.w*.55,y:q.y-34,w:36,h:34,type:Math.random()<.5?'monkey':'croc',alive:true});
+}
+function updateHud(){
+ $('hearts').textContent='❤️ '.repeat(lives)+'🖤 '.repeat(3-lives);
+ $('tokens').textContent=score;$('bananas').textContent=bananaCount;$('energy').textContent=Math.round(energy);$('level').textContent=level;
+}
+function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function damage(){if(hero.inv>0)return;lives--;hero.inv=100;hero.vy=-5;updateHud();if(lives<=0)endGame(false)}
+function endGame(win){active=false;$('overlay').style.display='flex';$('overlay').innerHTML=`<div class="panel"><h1>${win?'🏆 Перемога!':'🌿 Пригоду завершено'}</h1><p>Токени: ${score}<br>Банани: ${bananaCount}</p><button id="start">ГРАТИ ЗНОВУ</button></div>`;$('start').onclick=start}
+function start(){$('overlay').style.display='none';reset();active=true;paused=false}
+$('start').onclick=start;
+function jump(){if(active&&!paused&&hero.ground){hero.vy=-Math.max(9,H*.014);hero.ground=false}}
+function attack(){if(!active||paused)return;if(energy>=10){energy-=10;hero.slash=18;for(const e of foes){if(e.alive&&Math.abs(e.x-hero.x)<70&&Math.abs(e.y-hero.y)<65){e.alive=false;score+=2}}updateHud()}}
+function bind(id,key){let b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();input[key]=true;b.setPointerCapture(e.pointerId);if(key==='jump')jump()});for(let ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,()=>input[key]=false)}
+bind('left','left');bind('right','right');bind('jump','jump');
+$('attack').addEventListener('pointerdown',e=>{e.preventDefault();attack()});
+$('pause').onclick=()=>{if(!active)return;paused=!paused;$('pause').textContent=paused?'▶':'Ⅱ'};
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='a')input.left=true;if(e.key==='ArrowRight'||e.key==='d')input.right=true;if(e.key==='ArrowUp'||e.key===' ')jump();if(e.key==='x')attack()});
+addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='a')input.left=false;if(e.key==='ArrowRight'||e.key==='d')input.right=false});
+function update(dt){
+ if(!active||paused)return;frame++;
+ let speed=3.1+Math.min(level*.22,2);
+ if(input.left){hero.vx=-speed;hero.face=-1}else if(input.right){hero.vx=speed;hero.face=1}else hero.vx*=.82;
+ hero.x+=hero.vx;hero.vy+=.46;hero.y+=hero.vy;hero.ground=false;
+ for(const p of plats)if(hero.vy>=0&&hero.x+hero.w>p.x&&hero.x<p.x+p.w&&hero.y+hero.h>=p.y&&hero.y+hero.h-hero.vy<=p.y+10){hero.y=p.y-hero.h;hero.vy=0;hero.ground=true}
+ if(hero.y>H+60){damage();hero.y=H*.35;hero.vy=0}
+ if(hero.inv>0)hero.inv--;if(hero.slash>0)hero.slash--;energy=Math.min(100,energy+.025);
+ camera=Math.max(0,hero.x-W*.32);
+ let far=Math.max(...plats.map(p=>p.x+p.w));
+ if(far<camera+W+220){spawnAt(far+35+Math.random()*35)}
+ plats=plats.filter(p=>p.x+p.w>camera-120);
+ items=items.filter(i=>!i.got&&i.x>camera-80);
+ foes=foes.filter(e=>e.alive&&e.x>camera-100);
+ for(const i of items)if(overlap(hero,{x:i.x-i.r,y:i.y-i.r,w:i.r*2,h:i.r*2})){i.got=true;if(i.type==='token')score++;else{bananaCount++;energy=Math.min(100,energy+25)}}
+ for(const e of foes)if(e.alive&&overlap(hero,e))damage();
+ level=1+Math.floor(score/12);updateHud();
+}
+function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ let sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#5aa9b7');sky.addColorStop(.48,'#b3d1a0');sky.addColorStop(1,'#21452c');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+ // misty mountain silhouettes
+ for(let i=0;i<7;i++){let x=((i*190-camera*.12)%(W+220)+W+220)%(W+220)-100;ctx.fillStyle=i%2?'#507e67':'#789a7c';ctx.beginPath();ctx.moveTo(x,H*.65);ctx.lineTo(x+100,H*.18+(i%3)*25);ctx.lineTo(x+230,H*.65);ctx.fill()}
+ // distant foliage layers
+ for(let layer=0;layer<3;layer++)for(let i=0;i<14;i++){let x=((i*90-camera*(.2+layer*.13))%(W+120)+W+120)%(W+120)-50;let y=H*(.24+layer*.11)+(i%4)*15;ellipse(x,y,60-layer*8,50-layer*5,['#244e32','#1b482d','#123b26'][layer])}
+ // vines
+ ctx.strokeStyle='#294d28';ctx.lineWidth=4;for(let i=0;i<7;i++){let x=(i*160-camera*.35%(W+100));ctx.beginPath();ctx.moveTo(x,0);ctx.bezierCurveTo(x+40,H*.15,x-30,H*.2,x+25,H*.31);ctx.stroke()}
+ // water
+ let wy=H*.79;let water=ctx.createLinearGradient(0,wy,0,H);water.addColorStop(0,'#147f89');water.addColorStop(1,'#073f50');ctx.fillStyle=water;ctx.fillRect(0,wy,W,H-wy);
+ for(let i=0;i<30;i++){let x=((i*61-frame*1.1)%(W+60)+W+60)%(W+60);ctx.strokeStyle=i%2?'#71c6b4':'#328d91';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,wy+12+(i%7)*10);ctx.lineTo(x+18+(i%4)*8,wy+12+(i%7)*10);ctx.stroke()}
+ // platforms with rock, soil and moss
+ for(const p of plats){let x=p.x-camera;if(x>W+30||x+p.w<-30)continue;
+ ctx.fillStyle='#493c2b';ctx.fillRect(x,p.y,p.w,25);
+ for(let k=0;k<p.w;k+=13){ctx.fillStyle=['#5e5137','#3c3a2a','#766044'][Math.floor(k/13)%3];ctx.fillRect(x+k,p.y+4,10,17)}
+ ctx.fillStyle='#315b2b';ctx.fillRect(x-3,p.y-7,p.w+6,12);ctx.fillStyle='#477b34';ctx.fillRect(x,p.y-5,p.w,7);
+ for(let k=5;k<p.w;k+=17){ellipse(x+k,p.y-5,9,5,k%2?'#3f8537':'#5a983e')}
+ }
+ // items
+ for(const i of items){let x=i.x-camera;if(x<-30||x>W+30)continue;
+ if(i.type==='token'){let g=ctx.createRadialGradient(x-4,i.y-5,1,x,i.y,13);g.addColorStop(0,'#fff8ad');g.addColorStop(.4,'#ffc928');g.addColorStop(1,'#a96608');ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,i.y,11,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff0a2';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff4bd';ctx.font='bold 13px Arial';ctx.textAlign='center';ctx.fillText('★',x,i.y+5)}
+ else{ctx.font='25px Arial';ctx.textAlign='center';ctx.fillText('🍌',x,i.y+8)}
+ }
+ // enemies
+ for(const e of foes){let x=e.x-camera;if(x<-40||x>W+40)continue;ctx.font='31px Arial';ctx.textAlign='center';ctx.fillText(e.type==='monkey'?'🐒':'🐊',x+e.w/2,e.y+27)}
+ // hero with layered body and shadow
+ let x=hero.x-camera,y=hero.y;ellipse(x+15,y+54,17,4,'#10291e99');
+ ctx.save();if(hero.inv>0&&frame%8<4)ctx.globalAlpha=.4;
+ // legs and boots
+ ctx.lineCap='round';ctx.strokeStyle='#292b22';ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(x+11,y+37);ctx.lineTo(x+7+Math.sin(frame*.22)*4,y+49);ctx.moveTo(x+21,y+37);ctx.lineTo(x+26-Math.sin(frame*.22)*4,y+49);ctx.stroke();
+ ctx.strokeStyle='#76543a';ctx.lineWidth=11;ctx.beginPath();ctx.moveTo(x+11,y+20);ctx.lineTo(x+10,y+36);ctx.moveTo(x+21,y+20);ctx.lineTo(x+21,y+36);ctx.stroke();
+ // shirt / backpack
+ ctx.fillStyle='#4b5a38';ctx.beginPath();ctx.roundRect(x+5,y+14,22,23,5);ctx.fill();
+ ctx.fillStyle='#6d4a2d';ctx.fillRect(x+1,y+18,7,16);
+ // arms
+ ctx.strokeStyle='#c18a61';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(x+7,y+19);ctx.lineTo(x+1,y+30);ctx.moveTo(x+24,y+19);ctx.lineTo(x+29,y+26);ctx.stroke();
+ // head and hair
+ ellipse(x+16,y+9,9,10,'#c9946b');ellipse(x+15,y+4,10,6,'#34251b');ctx.fillStyle='#3b2b20';ctx.beginPath();ctx.moveTo(x+16,y+10);ctx.lineTo(x+24,y+11);ctx.lineTo(x+20,y+17);ctx.fill();
+ // machete
+ ctx.strokeStyle='#7c5837';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(x+28,y+27);ctx.lineTo(x+31,y+33);ctx.stroke();
+ ctx.strokeStyle='#d8e1d8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x+30,y+28);ctx.lineTo(x+(hero.slash?hero.face*50:hero.face*43),y+(hero.slash?7:24));ctx.stroke();
+ if(hero.slash){ctx.strokeStyle='#d8f4d8';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x+15,y+27,37,-1.2,1.1);ctx.stroke()}
+ ctx.restore();
+ if(paused){ctx.fillStyle='#0008';ctx.fillRect(0,0,W,H);ctx.fillStyle='white';ctx.font='bold 30px Arial';ctx.textAlign='center';ctx.fillText('ПАУЗА',W/2,H/2)}
+}
+function loop(t){let dt=Math.min(32,t-lastTime||16);lastTime=t;update(dt);draw();requestAnimationFrame(loop)}
+reset();draw();requestAnimationFrame(loop);
+})();
+</script>
+</body></html>
